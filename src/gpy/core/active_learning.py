@@ -116,6 +116,7 @@ class ActiveLearner:
         y_full: Arr64,
         max_points: int | None = None,
         rmse_threshold: Numeric = 0.5,
+        optimize_interval: int | None = 1,
     ) -> None:
         self.kernel = kernel
         self.x_full = _condition_array(
@@ -150,6 +151,17 @@ class ActiveLearner:
             )
         else:
             self.max_points = floor(len(self.y_full) * 0.8)
+
+        # this covers the possible division by zero error in the
+        # iteration % self.optimize interval check too
+        if not optimize_interval:
+            self.optimize_interval = None
+        else:
+            self.optimize_interval = int(
+                _validate_numeric_value(
+                    optimize_interval, "optimize_interval", allow_negative=False
+                )
+            )
 
         # initialize training sets and pool of points that haven't been picked
         self.x_train = np.array([])
@@ -333,9 +345,15 @@ class ActiveLearner:
             [0, self.x_full.shape[0] // 2, self.x_full.shape[0] - 1]
         )
 
-        for _ in range(self.max_points):
+        for iteration in range(self.max_points):
+            should_optimize = (
+                self.optimize_interval is not None
+                and iteration % self.optimize_interval == 0
+            )
             # step 1: fit model to training data, optimize w log likelihood
-            self.gp.fit(self.x_train, self.y_train, optimize_params=True)
+            self.gp.fit(
+                self.x_train, self.y_train, optimize_params=should_optimize
+            )
 
             # step 2: compute rmse and check if the threshold has been reached
             current_rmse = self.compute_rmse()
