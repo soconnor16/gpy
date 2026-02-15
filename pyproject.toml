@@ -1,14 +1,19 @@
 [project]
 name = "gpy"
-version = "0.1.0"
-description = "Gaussian Process Regression Implementation with active learning"
-authors = [{name = "Stephen O'Connor"}]
+version = "2.0.0"
+description = "Lightweight Gaussian Process regression library"
+license = { file = "LICENSE" }
+authors = [{ name = "Stephen O'Connor", email = "soconnor10111@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["gaussian-process", "machine-learning", "regression", "active-learning", "bayesian"]
 dependencies = [
     "numpy>=2.2.6",
     "scipy>=1.15.3",
 ]
+
+[project.urls]
+Repository = "https://github.com/soconnor16/gpy"
 
 [build-system]
 requires = ["hatchling"]
