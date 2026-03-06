@@ -1,6 +1,6 @@
 [project]
 name = "gpy"
-version = "2.0.0"
+version = "2.1.0"
 description = "Lightweight Gaussian Process regression library"
 license = { file = "LICENSE" }
 authors = [{ name = "Stephen O'Connor", email = "soconnor10111@gmail.com" }]
@@ -14,6 +14,11 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/soconnor16/gpy"
+
+[project.optional-dependencies]
+examples = [
+    "matplotlib>=3.10.8",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -156,6 +156,19 @@ class ConstantKernel(Kernel):
         """
         return f"{alpha:.6e} * {self.constant[0]:.6e}"
 
+    def _compute_diag(self, x: Arrf64) -> Arrf64:
+        """
+        Returns the diagonal of K(x, x). For the constant kernel, k(x, x) = c
+        for all x.
+
+        Args:
+            - x (Arrf64): Input array of shape (n, d).
+
+        Returns:
+            Arrf64: Array filled with the constant value, shape (n,).
+        """
+        return np.full(x.shape[0], self.constant[0])
+
     def _get_expanded_bounds(self) -> list[tuple[f64, f64]]:
         """
         Returns bounds for optimization.
@@ -164,20 +177,3 @@ class ConstantKernel(Kernel):
             list[tuple[f64, f64]]: Same as bounds property for isotropic kernel.
         """
         return self.bounds
-
-    def _validate_input_data(
-        self, x1: Arrf64, x2: Arrf64, name1: str, name2: str
-    ) -> tuple[Arrf64, Arrf64]:
-        """
-        Validates input arrays using parent class validation.
-
-        Args:
-            - x1 (Arrf64): First input array.
-            - x2 (Arrf64): Second input array.
-            - name1 (str): Name of first array for error messages.
-            - name2 (str): Name of second array for error messages.
-
-        Returns:
-            tuple[Arrf64, Arrf64]: Validated input arrays.
-        """
-        return super()._validate_input_data(x1, x2, name1, name2)

@@ -29,21 +29,21 @@ Variance: σ²* = K(X*, X*) - K(X*, X) @ K(X, X)⁻¹ @ K(X, X*)
 from gpy import GaussianProcess, RBFKernel
 import numpy as np
 
-# Training data
+# training data
 X = np.array([[1.0], [2.0], [3.0], [4.0]])
 y = np.array([1.0, 2.1, 2.9, 4.2])
 
-# Create GP with RBF kernel
+# create GP with RBF kernel
 kernel = RBFKernel(length_scale=1.0)
 gp = GaussianProcess(kernel, normalize_x=True)
 
-# Fit without optimization
+# fit without optimization
 gp.fit(X, y)
 
-# Fit with hyperparameter optimization
-gp.fit(X, y, optimize=True, objective="lml") # Or "log_marginal_likelihood" 
+# fit with hyperparameter optimization
+gp.fit(X, y, optimize=True, objective="lml") # or "log_marginal_likelihood" 
 
-# Predict
+# predict
 X_test = np.array([[1.5], [2.5], [3.5]])
 y_mean = gp.predict(X_test)
 y_mean, y_std = gp.predict(X_test, return_std=True)
@@ -55,21 +55,35 @@ y_mean, y_cov = gp.predict(X_test, return_cov=True)
 By default, input features are normalized to zero mean and unit variance:
 
 ```python
-# Automatic normalization (default)
+# automatic normalization (default)
 gp = GaussianProcess(kernel, normalize_x=True)
 
-# Disable if you normalize manually
+# disable if you normalize manually
 gp = GaussianProcess(kernel, normalize_x=False)
 ```
 
 Target values are always normalized internally.
+
+### Save and Load
+
+Save a fitted model to disk and load it back for later use:
+
+```python
+# save
+gp.save("model.pkl")
+
+# load
+gp_loaded = GaussianProcess.load("model.pkl")
+y_pred = gp_loaded.predict(X_test)
+```
+
 
 ### String Export
 
 Generate a mathematical expression for the fitted GP:
 
 ```python
-# For 2D input with variables named 'x' and 'y'
+# for 2D input with variables named 'x' and 'y'
 expression = gp.to_str(variable_names=["x", "y"])
 ```
 
@@ -87,6 +101,8 @@ This is useful for exporting to external tools like OpenMM custom forces.
 - `fit(x, y, optimize=False, objective="lml")`: Fit the GP to training data
 - `predict(x, return_std=False, return_cov=False)`: Make predictions
 - `optimize_hyperparameters(objective, num_restarts=5)`: Optimize kernel hyperparameters
+- `save(filepath)`: Save model to file
+- `load(filepath)` *(classmethod)*: Load model from file
 - `to_str(variable_names)`: Generate string representation
 
 **Attributes:**

@@ -106,9 +106,9 @@ param = 10 ** log_sample                      # = 0.01
 ### Optimization Parameters (in _utils/_constants.py)
 
 ```python
-_GLOBAL_MAXITER = 30   # Screening phase iterations
-_LOCAL_MAXITER = 300   # Refinement phase iterations
-_N_REFINE = 2          # Candidates to refine
+GLOBAL_MAXITER = 30    # Screening phase iterations
+LOCAL_MAXITER = 500    # Refinement phase iterations
+N_REFINE = 2           # Candidates to refine
 ```
 
 ### What Gets Optimized

@@ -5,6 +5,7 @@ Selection functions for active learning point acquisition strategies.
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy.stats import norm
 
 from gpy._utils._types import Arri64
 
@@ -64,6 +65,92 @@ def max_uncertainty(learner: "ActiveLearner", n_points: int = 1) -> Arri64:
 
     flat_var = var.flatten()
     sorted_indices = np.argsort(flat_var)
+    top_indices = sorted_indices[-n_points:][::-1]
+
+    return learner.remaining_indices[top_indices]
+
+
+def expected_improvement_max(
+    learner: "ActiveLearner", n_points: int = 1
+) -> Arri64:
+    """
+    Selects points with highest Expected Improvement for maximization.
+
+    Expected Improvement measures the expected amount by which a candidate
+    point will exceed the current best observed value. Balances exploitation
+    (high mean) with exploration (high uncertainty).
+
+    expected_improvement(x) = (μ(x) - f_best) * Φ(Z) + σ(x) * φ(Z)
+    where Z = (μ(x) - f_best) / σ(x), f_best = max(y_train)
+
+    Args:
+        - learner (ActiveLearner): The active learner instance with fitted GP.
+        - n_points (int): Number of points to select. Defaults to 1.
+
+    Returns:
+        Arri64: Indices of points with highest expected improvement, sorted by
+                decreasing expected_improvement. Returns empty array if no
+                points remain.
+    """
+    if len(learner.remaining_indices) == 0:
+        return np.array([], dtype=np.int64)
+
+    candidate_x = learner.x_full[learner.remaining_indices]
+    mu, sigma = learner.gp.predict(candidate_x, return_std=True)
+
+    target_max = np.max(learner.y_train)
+
+    expected_improvement = np.zeros_like(mu)
+    mask = sigma > 0
+    z = (mu[mask] - target_max) / sigma[mask]
+    expected_improvement[mask] = (mu[mask] - target_max) * norm.cdf(z) + sigma[
+        mask
+    ] * norm.pdf(z)
+
+    sorted_indices = np.argsort(expected_improvement)
+    top_indices = sorted_indices[-n_points:][::-1]
+
+    return learner.remaining_indices[top_indices]
+
+
+def expected_improvement_min(
+    learner: "ActiveLearner", n_points: int = 1
+) -> Arri64:
+    """
+    Selects points with highest Expected Improvement for minimization.
+
+    Expected Improvement measures the expected amount by which a candidate
+    point will fall below the current best (lowest) observed value. Balances
+    exploitation (low mean) with exploration (high uncertainty).
+
+    expected_improvement(x) = (f_best - μ(x)) * Φ(Z) + σ(x) * φ(Z)
+    where Z = (f_best - μ(x)) / σ(x), f_best = min(y_train)
+
+    Args:
+        - learner (ActiveLearner): The active learner instance with fitted GP.
+        - n_points (int): Number of points to select. Defaults to 1.
+
+    Returns:
+        Arri64: Indices of points with highest expected improvement, sorted by
+                decreasing expected_improvement. Returns empty array if no
+                points remain.
+    """
+    if len(learner.remaining_indices) == 0:
+        return np.array([], dtype=np.int64)
+
+    candidate_x = learner.x_full[learner.remaining_indices]
+    mu, sigma = learner.gp.predict(candidate_x, return_std=True)
+
+    target_min = np.min(learner.y_train)
+
+    expected_improvement = np.zeros_like(mu)
+    mask = sigma > 0
+    z = (target_min - mu[mask]) / sigma[mask]
+    expected_improvement[mask] = (target_min - mu[mask]) * norm.cdf(z) + sigma[
+        mask
+    ] * norm.pdf(z)
+
+    sorted_indices = np.argsort(expected_improvement)
     top_indices = sorted_indices[-n_points:][::-1]
 
     return learner.remaining_indices[top_indices]

@@ -5,19 +5,25 @@ A lightweight Gaussian Process regression library built on NumPy and SciPy, orig
 ## Features
 
 - Gaussian Process regression with automatic hyperparameter optimization
-- Multiple kernels: RBF, Periodic, Constant (combinable via `+` and `*`)
-- Active learning for intelligent data sampling
-- Anisotropic kernels (per-dimension length scales)
+- Multiple kernels: RBF, Matérn, Periodic, Constant (combinable via `+` and `*`)
+- Active learning with multiple selection strategies (uncertainty, MAE, expected improvement)
+- Model saving and loading with pickle
+- Anisotropic kernels (support for per-dimension hyperparameters)
 - String export for integration with external tools
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/soconnor10111/gpy.git
+pip install git+https://github.com/soconnor16/gpy.git
+```
+or for optional dependencies to run the example files
+
+```bash
+pip install "gpy[examples]@git+https://github.com/soconnor16/gpy.git"
 ```
 
-## Quick Start
 
+## Quick Start (more detailed examples can be found [here](examples/))
 ### Gaussian Process Regression
 
 ```python
@@ -33,6 +39,18 @@ gp.fit(X_train, y_train, optimize=True)
 
 X_test = np.linspace(0, 10, 100).reshape(-1, 1)
 y_mean, y_std = gp.predict(X_test, return_std=True)
+```
+
+### Matérn Kernel
+
+```python
+from gpy import MaternKernel
+
+# Matérn 5/2 (twice differentiable, default)
+kernel = MaternKernel(length_scale=1.0, nu=2.5)
+
+# Matérn 3/2 (once differentiable, rougher functions)
+kernel = MaternKernel(length_scale=1.0, nu=1.5)
 ```
 
 ### Combining Kernels
@@ -79,6 +97,18 @@ learner.learn(learning_strategy="uncertainty")
 y_pred = learner.gp.predict(X_full)
 ```
 
+### Save and Load
+
+```python
+# save a fitted model
+gp.save("model.pkl")
+
+# load it back
+from gpy import GaussianProcess
+gp_loaded = GaussianProcess.load("model.pkl")
+y_pred = gp_loaded.predict(X_test)
+```
+
 ### String Export
 
 ```python
@@ -88,7 +118,7 @@ expression = gp.to_str(variable_names=["x"])
 ## Modules
 
 - [GaussianProcess](src/gpy/GaussianProcess/) - core GP regression
-- [Kernels](src/gpy/Kernels/) - RBF, Periodic, Constant, composites
+- [Kernels](src/gpy/Kernels/) - RBF, Matérn, Periodic, Constant, composites
 - [ActiveLearning](src/gpy/ActiveLearning/) - data sampling strategies
 - [Optimization](src/gpy/Optimization/) - hyperparameter optimization
 

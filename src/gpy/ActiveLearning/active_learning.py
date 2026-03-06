@@ -8,6 +8,9 @@ by strategically selecting the most informative points from an unlabeled pool.
 Common acquisition strategies:
     - Uncertainty Sampling: Select points where σ²(x) is highest, exploring
       regions where the model is least confident.
+    - Expected Improvement: Select points that maximize the expected improvement
+      over the current best observation (separate variants for maximization and
+      minimization objectives).
     - Error-based: Select points with highest |y - μ(x)|, focusing on regions
       where the model performs worst.
     - Random: Baseline strategy with uniform random selection.
@@ -19,8 +22,10 @@ The learning loop:
     4. Repeat until stopping criterion (RMSE threshold, budget, etc.)
 """
 
+import csv
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 
@@ -32,6 +37,8 @@ from gpy._utils._validation import (
     validate_numeric_value,
 )
 from gpy.ActiveLearning.selection_functions import (
+    expected_improvement_max,
+    expected_improvement_min,
     max_absolute_error,
     max_uncertainty,
     random_selection,
@@ -49,6 +56,10 @@ LEARNING_STRATEGIES: dict[str, Callable] = {
     "max_uncertainty": max_uncertainty,
     "mae": max_absolute_error,
     "max_absolute_error": max_absolute_error,
+    "ei_max": expected_improvement_max,
+    "expected_improvement_max": expected_improvement_max,
+    "ei_min": expected_improvement_min,
+    "expected_improvement_min": expected_improvement_min,
 }
 
 
@@ -76,7 +87,7 @@ class ActiveLearner:
         y_full: Arrf64,
         max_points: int | None = None,
         rmse_threshold: f64 = np.float64(0.5),
-        optimize_interval: int | None = None,
+        optimize_interval: int | None = 1,
     ) -> None:
         """
         Initializes an active learner with the given kernel and data pool.
@@ -120,7 +131,7 @@ class ActiveLearner:
             )
 
         else:
-            self.max_points = np.floor(len(self.y_full))
+            self.max_points = len(self.y_full)
 
         if optimize_interval:
             self.optimize_interval = int(
@@ -190,13 +201,23 @@ class ActiveLearner:
         """
         return selection_function(self, n_points)
 
+    def _update_log(self, rmse, log_file: Path) -> None:
+        """
+        Private method to update the log file of the learning loop.
+        """
+        with log_file.open("a", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([self.x_train.shape[0], rmse])
+
     def learn(
         self,
         learning_strategy: str,
         batch_size: int = 1,
         final_optimization_method: str = "rmse",
         update: bool = False,
+        log: bool = False,
         update_interval: int = 10,
+        log_update_interval: int = 5,
     ) -> None:
         """
         Executes the active learning loop, iteratively selecting and adding
@@ -213,8 +234,13 @@ class ActiveLearner:
                                                Defaults to 'rmse'.
             - update (bool): Whether to print progress updates. Defaults to
                              False.
+            - log (bool): Whether to log status updates. Works like the
+                          "update" parameter, but updates are put into a log
+                          file rather than stdout. Defaults to False.
             - update_interval (int): Iterations between progress updates.
                                      Defaults to 10.
+            - log_update_interval (int): Iterations between log progress updates.
+                                         Defaults to 5.
 
         Raises:
             ValidationError: If learning_strategy is not recognized.
@@ -233,6 +259,14 @@ class ActiveLearner:
             )
         )
 
+        log_update_interval = int(
+            validate_numeric_value(
+                log_update_interval,
+                "Log Update Interval",
+                allow_nonpositive=False,
+            )
+        )
+
         if learning_strategy not in LEARNING_STRATEGIES:
             err_msg = (
                 f"Error: {learning_strategy} is not a valid learning strategy. "
@@ -240,12 +274,23 @@ class ActiveLearner:
             )
             raise ValidationError(err_msg)
 
+        log_file = None
+        if log:
+            log_file = Path(
+                f"./active_learning_{learning_strategy}.csv"
+            ).resolve()
+
+            with log_file.open("w", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["num_points_used", "rmse"])
+
         for iteration in range(self.max_points):
             should_optimize = (
                 self.optimize_interval is not None
                 and iteration % self.optimize_interval == 0
             )
             should_update = update and (iteration + 1) % update_interval == 0
+            should_log = log and (iteration + 1) % log_update_interval == 0
 
             # step 1: fit model to current training data, optimize with lml
             self.gp.fit(self.x_train, self.y_train, optimize=should_optimize)
@@ -258,11 +303,23 @@ class ActiveLearner:
             if should_update:
                 print(f"Iteration {iteration + 1}: RMSE: {current_rmse}")
 
+            if should_log and log_file is not None:
+                self._update_log(current_rmse, log_file)
+
             if current_rmse <= self.rmse_threshold:
                 optimize_hyperparameters(self, final_optimization_method)
                 final_rmse = compute_rmse_across_dataset(
                     self.gp, self.x_full, self.y_full
                 )
+
+                if update:
+                    # make sure the update printing and final printing have a
+                    # new line between them
+                    print()
+
+                if log and log_file is not None:
+                    self._update_log(final_rmse, log_file)
+
                 print(
                     "\033[4mRMSE threshold reached\033[0m:",
                     f"\nFinal RMSE: {final_rmse:.4f}",
@@ -277,6 +334,14 @@ class ActiveLearner:
                     self.gp, self.x_full, self.y_full
                 )
 
+                if update:
+                    # make sure the update printing and final printing have a
+                    # new line between them
+                    print()
+
+                if log and log_file is not None:
+                    self._update_log(final_rmse, log_file)
+
                 print(
                     "\033[4mAll points used\033[0m:",
                     f"\nFinal RMSE: {final_rmse:.4f}",
@@ -285,14 +350,23 @@ class ActiveLearner:
 
                 break
 
-            if len(self.y_train) >= self.max_points:
+            remaining_budget = self.max_points - len(self.y_train)
+            if remaining_budget <= 0:
                 optimize_hyperparameters(self, final_optimization_method)
                 final_rmse = compute_rmse_across_dataset(
                     self.gp, self.x_full, self.y_full
                 )
 
+                if update:
+                    # make sure the update printing and final printing have a
+                    # new line between them
+                    print()
+
+                if log and log_file is not None:
+                    self._update_log(final_rmse, log_file)
+
                 print(
-                    "\033[4mMax iterations reached\033[0m:",
+                    "\033[4mMax points reached\033[0m:",
                     f"\nFinal RMSE: {final_rmse:.4f}",
                     f"\nPoints used: {len(self.y_train)}",
                 )
@@ -300,9 +374,10 @@ class ActiveLearner:
                 break
 
             try:
+                points_to_add = min(batch_size, remaining_budget)
                 selection_function = LEARNING_STRATEGIES[learning_strategy]
                 selected_indices = self.select_next_point(
-                    selection_function, batch_size
+                    selection_function, points_to_add
                 )
                 self.x_train = np.vstack(
                     [self.x_train, self.x_full[selected_indices]]

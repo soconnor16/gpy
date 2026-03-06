@@ -161,6 +161,11 @@ def validate_input_arrays(
     arr1 = validate_numeric_array(arr1, name1, allow_nonpositive=True)
     arr2 = validate_numeric_array(arr2, name2, allow_nonpositive=True)
 
+    # ensures that all arrays are at least column vectors
+    # otherwise arrays like (100,) and (50,) would fail the next check
+    arr1 = arr1.reshape(-1, 1) if arr1.ndim == 1 else arr1
+    arr2 = arr2.reshape(-1, 1) if arr2.ndim == 1 else arr2
+
     if arr1.shape[1] != arr2.shape[1]:
         err_msg = "Error: Input arrays do not have the same number of features."
         raise ValidationError(err_msg)
@@ -351,5 +356,6 @@ def validate_variable_names(
             f"Error: Expected {expected_num_variables} variable names, "
             f"got {len(variable_names)}."
         )
+        raise ValidationError(err_msg)
 
     return variable_names

@@ -4,7 +4,7 @@ import numpy as np
 from scipy import linalg
 from scipy.spatial import distance
 
-from gpy._utils._constants import SMALL_EPSILON
+from gpy._utils._constants import EPSILON
 from gpy._utils._types import Arrf64, f64
 
 if TYPE_CHECKING:
@@ -54,69 +54,67 @@ def compute_lower_cholesky_decomposition(
     Computes the lower triangular Cholesky decomposition of a kernel matrix
     with adaptive noise regularization for numerical stability.
 
-    Regularization is attempted in three ways:
-    1. Decompose with current noise level
-    2. Scale noise based on kernel matrix diagonal mean
-    3. Add jitter based on negative eigenvalues if needed
+    Uses a two-phase strategy:
+        1. Retry with exponentially growing noise (handles most cases)
+        2. Eigenvalue-based correction as a final fallback
 
     Args:
         - K (Arrf64): Kernel matrix of shape (n, n)
         - noise (float): Initial noise/jitter level to add to diagonal
         - max_attempts (int): Maximum number of decomposition attempts
+                              before falling back to eigenvalue correction
 
     Returns:
         tuple[Arrf64, float]: Lower triangular Cholesky factor L and the
             final noise level used, where K + noise * I = L @ L.T
 
     Raises:
-        ValueError: If decomposition fails after all strategies are exhausted
-                    or if matrix has positive eigenvalues but still fails to
-                    decompose.
+        ValueError: If decomposition fails after all strategies are exhausted.
     """
     n = K.shape[0]
-    K_noise = np.empty_like(K)  # pre-allocate to avoid repeated allocations
+    K_reg = np.empty_like(K)
 
+    # phase 1: retry with exponentially growing noise
     for attempt in range(max_attempts):
-        # first strategy: decompose with current noise
+        np.copyto(K_reg, K)
+        K_reg.flat[:: n + 1] += noise
+
         try:
-            np.copyto(K_noise, K)
-            K_noise.flat[:: n + 1] += noise
-            lower_chol = linalg.cholesky(K_noise, lower=True)
-            break
+            return linalg.cholesky(K_reg, lower=True), noise
         except linalg.LinAlgError:
-            # second strategy: add noise based on kernel matrix diagonal
-            if attempt < max_attempts - 1:
-                k_scale = float(np.mean(np.diag(K)))
-                noise = max(10 * noise, k_scale * SMALL_EPSILON)
+            pass
 
-            # final strategy: add noise based on kernel matrix eigenvalues
-            else:
-                try:
-                    np.copyto(K_noise, K)
-                    K_noise.flat[:: n + 1] += noise
-                    eigenvalues = linalg.eigvalsh(K_noise)
-                    min_eig = np.min(eigenvalues)
+        if attempt == 0:
+            k_scale = float(np.mean(np.diag(K)))
+            noise = max(noise, k_scale * EPSILON)
+        noise *= 10
 
-                    if min_eig < 0.0:
-                        jitter = np.abs(min_eig) + SMALL_EPSILON
-                        K_noise.flat[:: n + 1] += jitter
-                        lower_chol = linalg.cholesky(K_noise, lower=True)
+    # phase 2: eigenvalue-based correction
+    np.copyto(K_reg, K)
+    K_reg.flat[:: n + 1] += noise
 
-                    else:
-                        err_msg = (
-                            "Error: Cholesky Decomposition of the Kernel "
-                            "matrix failed despite positive eigenvalues."
-                        )
-                        raise ValueError(err_msg)
+    eigenvalues = linalg.eigvalsh(K_reg)
+    min_eig = float(np.min(eigenvalues))
 
-                except linalg.LinAlgError as exc:
-                    err_msg = (
-                        "Error: Numerical instability during Kernel matrix "
-                        f"decomposition: {exc!s}"
-                    )
-                    raise ValueError(err_msg) from exc
+    if min_eig >= 0.0:
+        err_msg = (
+            "Error: Cholesky decomposition of the kernel matrix "
+            "failed despite positive eigenvalues."
+        )
+        raise ValueError(err_msg)
 
-    return lower_chol, noise
+    jitter = abs(min_eig) + EPSILON
+    K_reg.flat[:: n + 1] += jitter
+    noise += jitter
+
+    try:
+        return linalg.cholesky(K_reg, lower=True), noise
+    except linalg.LinAlgError as exc:
+        err_msg = (
+            "Error: Numerical instability during kernel matrix "
+            f"decomposition: {exc!s}"
+        )
+        raise ValueError(err_msg) from exc
 
 
 def compute_rmse_across_dataset(

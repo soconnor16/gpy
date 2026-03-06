@@ -20,7 +20,9 @@ the log marginal likelihood:
     log p(y|X,θ) = -0.5 * y.T @ K^{-1} @ y - 0.5 * log|K| - n/2 * log(2π)
 """
 
+import pickle
 import warnings
+from pathlib import Path
 
 import numpy as np
 from scipy import linalg
@@ -55,15 +57,16 @@ class GaussianProcess:
         - alpha (Arrf64): Weights computed during fitting for predictions.
     """
 
-    def __init__(self, kernel: Kernel, normalize_x: bool = True) -> None:
+    def __init__(self, kernel: Kernel, normalize_inputs: bool = True) -> None:
         """
         Initializes a Gaussian Process model with the specified kernel.
 
         Args:
             - kernel (Kernel): A kernel instance defining the covariance
                                function.
-            - normalize_x (bool): Whether to normalize input features to zero
-                                  mean and unit variance. Defaults to True.
+            - normalize_inputs (bool): Whether to normalize input features to
+                                       zero mean and unit variance. Defaults to
+                                       True.
 
         Raises:
             ValidationError: If kernel is not a valid Kernel subclass.
@@ -75,7 +78,7 @@ class GaussianProcess:
             raise ValidationError(err_msg)
 
         self.kernel = kernel
-        self._normalize_x = normalize_x
+        self._normalize_inputs = normalize_inputs
 
         # simulates gaussian noise in data, optimized with kernel
         # hyperparameters helps stabilize fitting with numerically unstable data
@@ -84,8 +87,6 @@ class GaussianProcess:
         # training and testing data
         self.x_train = np.array([])
         self.y_train = np.array([])
-        self.x_test = np.array([])
-        self.y_test = np.array([])
 
         # GP weight parameter (alpha = K^-1 @ y)
         self.alpha = np.array([])
@@ -98,8 +99,8 @@ class GaussianProcess:
         self._y_std = 1
 
         # input normalization stats (arrays to handle multiple features)
-        # only used if normalize_x is True; otherwise set to identity transform
-        if self._normalize_x:
+        # only used if normalize_inputs is True; otherwise set to identity transform
+        if self._normalize_inputs:
             self._x_mean = np.array([])
             self._x_std = np.array([])
 
@@ -161,7 +162,7 @@ class GaussianProcess:
         """
         x, y = validate_input_and_target_data(x, y)
 
-        if self._normalize_x:
+        if self._normalize_inputs:
             self.x_train, self._x_mean, self._x_std = normalize_input_data(x)
 
         else:
@@ -175,7 +176,6 @@ class GaussianProcess:
 
         if optimize:
             self.optimize_hyperparameters(objective)
-            self._fit_without_optimization()
 
         else:
             self._fit_without_optimization()
@@ -216,7 +216,7 @@ class GaussianProcess:
         x = x.reshape(-1, 1) if x.ndim == 1 else x
 
         # normalize new input data
-        # this is safe even if _normalize_x is False because self._x_mean and
+        # this is safe even if _normalize_inputs is False because self._x_mean and
         # self._x_std are initialized to default values of 0 and 1 anyways
         x_norm = (x - self._x_mean) / self._x_std
 
@@ -247,7 +247,7 @@ class GaussianProcess:
                 return y_mean, y_std, y_cov
             return y_mean, y_cov
 
-        k_diag = np.ones(x_norm.shape[0])
+        k_diag = self.kernel._compute_diag(x_norm)
 
         y_var_norm = k_diag - np.sum(variance**2, axis=0)
 
@@ -255,6 +255,63 @@ class GaussianProcess:
         y_std = np.sqrt(y_var_norm) * self._y_std
 
         return y_mean, y_std
+
+    def save(self, filepath: str | Path) -> None:
+        """
+        Saves the Gaussian Process model to a file.
+
+        Args:
+            - filepath (str or Path): Path to save the model to.
+        """
+        if not isinstance(filepath, (Path, str)):
+            err_msg = "Error: 'filepath' must be a str type or Path object"
+            raise ValidationError(err_msg)
+
+        filepath = Path(filepath).resolve()
+
+        with filepath.open("wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load(cls, filepath: str | Path) -> "GaussianProcess":
+        """
+        Loads a Gaussian Process model from a file.
+
+        Args:
+            - filepath (str or Path): Path to the saved model file.
+
+        Returns:
+            GaussianProcess: The loaded model, ready for prediction.
+
+        Raises:
+            TypeError: If the loaded object is not a GaussianProcess instance.
+            FileNotFoundError: If the file does not exist.
+        """
+        if not isinstance(filepath, (Path, str)):
+            err_msg = "Error: 'filepath' must be a str type or Path object"
+            raise ValidationError(err_msg)
+
+        filepath = Path(filepath).resolve()
+
+        if not filepath.exists():
+            err_msg = f"Error: '{filepath}' does not exist."
+            raise FileNotFoundError(err_msg)
+
+        with filepath.open("rb") as f:
+            model = pickle.load(f)
+
+        if not isinstance(model, cls):
+            err_msg = (
+                f"Error: Expected a GaussianProcess instance, "
+                f"got '{type(model).__name__}'."
+            )
+            raise TypeError(err_msg)
+
+        if model.alpha.size == 0 or model._lower_chol.size == 0:
+            warning_msg = "Warning: Loaded model is not fitted."
+            warnings.warn(warning_msg)
+
+        return model
 
     def to_str(self, variable_names: list[str]) -> str:
         """

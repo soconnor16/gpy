@@ -268,6 +268,19 @@ class RBFKernel(Kernel):
 
         return f"( {alpha:.6e} * exp( -0.5 * ( {full_dist_str} ) ) )"
 
+    def _compute_diag(self, x: Arrf64) -> Arrf64:
+        """
+        Returns the diagonal of K(x, x). For the RBF kernel, k(x, x) = 1
+        for all x since the squared distance is zero.
+
+        Args:
+            - x (Arrf64): Input array of shape (n, d).
+
+        Returns:
+            Arrf64: Array of ones with shape (n,).
+        """
+        return np.ones(x.shape[0])
+
     def _get_expanded_bounds(self) -> list[tuple[f64, f64]]:
         """
         Returns expanded bounds for anisotropic hyperparameters.
@@ -294,20 +307,3 @@ class RBFKernel(Kernel):
         """
         if not self.isotropic:
             validate_anisotropic_hyperparameter_shape(x, self.length_scale)
-
-    def _validate_input_data(
-        self, x1: Arrf64, x2: Arrf64, name1: str, name2: str
-    ) -> tuple[Arrf64, Arrf64]:
-        """
-        Validates input arrays using parent class validation.
-
-        Args:
-            - x1 (Arrf64): First input array.
-            - x2 (Arrf64): Second input array.
-            - name1 (str): Name of first array for error messages.
-            - name2 (str): Name of second array for error messages.
-
-        Returns:
-            tuple[Arrf64, Arrf64]: Validated input arrays.
-        """
-        return super()._validate_input_data(x1, x2, name1, name2)

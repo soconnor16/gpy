@@ -151,6 +151,7 @@ def optimize_hyperparameters(
     if not screening_results:
         learner.gp.kernel.set_params(initial_theta[:-1])
         learner.gp._noise = initial_theta[-1]
+        learner.gp._fit_without_optimization()
         return
 
     # sort by loss and select top candidates for refinement
@@ -183,5 +184,7 @@ def optimize_hyperparameters(
     # set final best hyperparameters
     learner.gp.kernel.set_params(best_theta[:-1])
     learner.gp._noise = best_theta[-1]
+
+    learner.gp._fit_without_optimization()
 
     return

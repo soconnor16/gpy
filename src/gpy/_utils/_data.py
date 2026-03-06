@@ -1,6 +1,6 @@
 import numpy as np
 
-from gpy._utils._constants import SMALL_EPSILON
+from gpy._utils._constants import EPSILON
 from gpy._utils._errors import ValidationError
 from gpy._utils._types import Arrf64, f64
 
@@ -54,7 +54,7 @@ def expand_kernel_bounds(
     Args:
         - params (Arrf64): Hyperparameter array defining total size
         - bounds (list[tuple[f64, f64]]): Bounds for each anisotropic parameter
-                                          type (length = num_anisotropic_kernel_params)
+                                          type
         - num_anisotropic_kernel_params (int): Number of distinct anisotropic
                                                parameter types
 
@@ -127,7 +127,7 @@ def normalize_target_data(arr: Arrf64) -> tuple[Arrf64, f64, f64]:
     arr_mean = np.mean(arr)
     arr_std = np.std(arr)
     # prevent division by zero if target data is constant
-    if np.abs(arr_std - 0) <= SMALL_EPSILON:
+    if np.abs(arr_std - 0) <= EPSILON:
         arr_std = 1.0
 
     arr_normalized = (arr - arr_mean) / arr_std

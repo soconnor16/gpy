@@ -19,6 +19,8 @@ data and is central to GP predictions:
 
 from abc import ABC, abstractmethod
 
+import numpy as np
+
 from gpy._utils._types import Arrf64, f64
 from gpy._utils._validation import validate_input_arrays
 
@@ -243,10 +245,39 @@ class Kernel(ABC):
         to ensure that they are valid for the current input data.
         """
 
-    @abstractmethod
+    def _compute_diag(self, x: Arrf64) -> Arrf64:
+        """
+        Computes the diagonal of the kernel matrix K(x, x).
+
+        This default implementation computes the full matrix and extracts
+        the diagonal. Subclasses should override this for efficiency when
+        the diagonal has a known closed form (e.g., stationary kernels
+        always return ones).
+
+        Args:
+            - x (Arrf64): Input array of shape (n, d).
+
+        Returns:
+            Arrf64: Diagonal of K(x, x) with shape (n,).
+        """
+        return np.diag(self._compute(x, x))
+
     def _validate_input_data(
         self, x1: Arrf64, x2: Arrf64, name1: str, name2: str
     ) -> tuple[Arrf64, Arrf64]:
+        """
+        Private method to validate input data before being used for
+        computation.
+
+        Args:
+            - x1 (Arrf64): First input array.
+            - x2 (Arrf64): Second input array.
+            - name1 (str): Name of first array for error messages.
+            - name2 (str): Name of second array for error messages.
+
+        Returns:
+            tuple[Arrf64, Arrf64]: Validated input arrays.
+        """
         return validate_input_arrays(x1, name1, x2, name2)
 
     # ----------------------------- MAGIC METHODS ---------------------------- #

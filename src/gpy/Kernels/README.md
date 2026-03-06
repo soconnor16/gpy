@@ -31,12 +31,38 @@ K(x, x') = exp(-0.5 * ||x - x'||² / l²)
 ```python
 from gpy import RBFKernel
 
-# Isotropic (single length scale for all dimensions)
+# isotropic (single length scale for all dimensions)
 kernel = RBFKernel(length_scale=1.0, isotropic=True)
 
-# Anisotropic (separate length scale per dimension)
+# anisotropic (separate length scale per dimension)
 kernel = RBFKernel(length_scale=[1.0, 2.0, 0.5], isotropic=False)
 ```
+
+### Matérn Kernel
+
+A flexible kernel family with controllable smoothness. Less restrictive than RBF for physical processes with finite differentiability.
+
+```
+ν = 3/2:  K(x, x') = (1 + √3 r) exp(-√3 r)
+ν = 5/2:  K(x, x') = (1 + √5 r + 5r²/3) exp(-√5 r)
+```
+
+where `r = ||x - x'|| / l`.
+
+```python
+from gpy import MaternKernel
+
+# Matérn 5/2 — twice differentiable (default)
+kernel = MaternKernel(length_scale=1.0, nu=2.5)
+
+# Matérn 3/2 — once differentiable (rougher functions)
+kernel = MaternKernel(length_scale=1.0, nu=1.5)
+
+# anisotropic
+kernel = MaternKernel(length_scale=[1.0, 2.0], nu=2.5, isotropic=False)
+```
+
+**When to use:** Physical processes where infinite smoothness (RBF) is unrealistic. Matérn 5/2 is a popular default in many GP applications.
 
 ### Periodic Kernel
 
@@ -50,10 +76,10 @@ K(x, x') = exp(-2 * Σᵢ sin²(π|xᵢ - x'ᵢ| / pᵢ) / lᵢ²)
 from gpy import PeriodicKernel
 import numpy as np
 
-# Isotropic
+# isotropic
 kernel = PeriodicKernel(length_scale=1.0, period=2*np.pi, isotropic=True)
 
-# Anisotropic
+# anisotropic
 kernel = PeriodicKernel(
     length_scale=[1.0, 2.0],
     period=[2*np.pi, np.pi],
@@ -84,7 +110,7 @@ Kernels can be combined using `+` (addition) and `*` (multiplication):
 Sum of independent components:
 
 ```python
-# Smooth trend + periodic pattern
+# smooth trend + periodic pattern
 kernel = RBFKernel(length_scale=5.0) + PeriodicKernel(length_scale=1.0, period=2*np.pi)
 ```
 
@@ -93,21 +119,21 @@ kernel = RBFKernel(length_scale=5.0) + PeriodicKernel(length_scale=1.0, period=2
 Multiplicative interactions (one pattern modulates another):
 
 ```python
-# Scaled periodic kernel
+# scaled periodic kernel
 kernel = ConstantKernel(constant=2.0) * PeriodicKernel(length_scale=1.0, period=2*np.pi)
 
-# Amplitude-varying periodic
+# amplitude-varying periodic
 kernel = RBFKernel(length_scale=10.0) * PeriodicKernel(length_scale=1.0, period=2*np.pi)
 ```
 
 ### Complex Combinations
 
 ```python
-# Trend + seasonal + noise
+# trend + seasonal + noise
 kernel = (
-    RBFKernel(length_scale=10.0) +  # Long-term trend
-    PeriodicKernel(length_scale=1.0, period=1.0) +  # Seasonal
-    ConstantKernel(constant=0.1)  # Baseline
+    RBFKernel(length_scale=10.0) +  # long-term trend
+    PeriodicKernel(length_scale=1.0, period=1.0) +  # seasonal
+    ConstantKernel(constant=0.1)  # baseline
 )
 ```
 
@@ -116,18 +142,18 @@ kernel = (
 All kernels implement:
 
 ```python
-# Compute kernel matrix
-K = kernel.compute(X1, X2)  # Shape: (n, m)
+# compute kernel matrix
+K = kernel.compute(X1, X2)  # shape: (n, m)
 
-# Compute gradients w.r.t. hyperparameters
-grads = kernel.gradient(X1, X2)  # Tuple of gradient tensors
+# compute gradients w.r.t. hyperparameters
+grads = kernel.gradient(X1, X2)  # tuple of gradient tensors
 
-# Get/set hyperparameters
-params = kernel.get_params()  # Flat array
+# get/set hyperparameters
+params = kernel.get_params()  # flat array
 kernel.set_params(new_params)
 
-# Direct call syntax
-K = kernel(X1, X2)  # Same as kernel.compute(X1, X2)
+# direct call syntax
+K = kernel(X1, X2)  # same as kernel.compute(X1, X2)
 ```
 
 ## Isotropic vs Anisotropic
@@ -148,4 +174,3 @@ kernel = RBFKernel(length_scale=1.0, isotropic=True)
 # 3D input, anisotropic (3 length scales)
 kernel = RBFKernel(length_scale=[1.0, 2.0, 0.5], isotropic=False)
 ```
-

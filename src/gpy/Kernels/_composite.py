@@ -204,6 +204,24 @@ class AdditiveKernel(CompositeKernel):
     K_sum(x, x') = K1(x, x') + K2(x, x') + ...
     """
 
+    def _compute_diag(self, x: Arrf64) -> Arrf64:
+        """
+        Computes the diagonal of the additive kernel matrix. The diagonal
+        of a sum of kernels is the sum of each kernel's diagonal.
+
+        Args:
+            - x (Arrf64): Input array of shape (n, d).
+
+        Returns:
+            Arrf64: Sum of child kernel diagonals with shape (n,).
+        """
+        diag = self.kernels[0]._compute_diag(x)
+
+        for k in self.kernels[1:]:
+            diag = diag + k._compute_diag(x)
+
+        return diag
+
     def _compute(self, x1: Arrf64, x2: Arrf64) -> Arrf64:
         """
         Computes the sum of kernel matrices from all child kernels.
@@ -292,6 +310,25 @@ class ProductKernel(CompositeKernel):
     Composite kernel representing the product of multiple kernels.
     K_prod(x, x') = K1(x, x') * K2(x, x') * ...
     """
+
+    def _compute_diag(self, x: Arrf64) -> Arrf64:
+        """
+        Computes the diagonal of the product kernel matrix. The diagonal
+        of a product of kernels is the element-wise product of each
+        kernel's diagonal.
+
+        Args:
+            - x (Arrf64): Input array of shape (n, d).
+
+        Returns:
+            Arrf64: Product of child kernel diagonals with shape (n,).
+        """
+        diag = self.kernels[0]._compute_diag(x)
+
+        for k in self.kernels[1:]:
+            diag = diag * k._compute_diag(x)
+
+        return diag
 
     def _compute(self, x1: Arrf64, x2: Arrf64) -> Arrf64:
         """
