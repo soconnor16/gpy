@@ -21,7 +21,6 @@ seasonal patterns, cyclical phenomena, or any repeating structures.
 
 import numpy as np
 
-from gpy._utils._computation import compute_absolute_distance
 from gpy._utils._data import (
     distribute_anisotropic_hyperparameters,
     expand_kernel_bounds,
@@ -125,13 +124,26 @@ class PeriodicKernel(Kernel):
         Returns:
             Arrf64: Kernel matrix of shape (n, m).
         """
-        absolute_dist = compute_absolute_distance(x1, x2)
+        n_rows = x1.shape[0]
+        n_cols = x2.shape[0]
+        n_features = x1.shape[1]
 
-        sine_term = np.sin((np.pi / self.period) * absolute_dist)
-        ls = self.length_scale
-        scaled_sine_squared = (sine_term * sine_term) / (ls * ls)
+        exponent = np.zeros((n_rows, n_cols))
 
-        exponent = np.sum(scaled_sine_squared, axis=2)
+        # Calculate the exponent dimension-by-dimension to avoid 3D allocations
+        for dim in range(n_features):
+            p_d = self.period[0] if self.isotropic else self.period[dim]
+            l_d = (
+                self.length_scale[0]
+                if self.isotropic
+                else self.length_scale[dim]
+            )
+
+            # Compute 1D absolute distance: shape (N, M)
+            dist_d = np.abs(x1[:, dim : dim + 1] - x2[:, dim : dim + 1].T)
+
+            sine_term = np.sin((np.pi / p_d) * dist_d)
+            exponent += (sine_term * sine_term) / (l_d * l_d)
 
         return np.exp(-2.0 * exponent)
 
@@ -148,56 +160,9 @@ class PeriodicKernel(Kernel):
             tuple[Arrf64, ...]: Tuple of gradient tensors for length scale
                                 and period.
         """
-        K = self._compute(x1, x2)
-        absolute_dist = compute_absolute_distance(x1, x2)
+        _, gradients = self._compute_with_gradient(x1, x2)
 
-        n_rows, n_cols = K.shape
-        n_features = x1.shape[1]
-
-        # determine output sizes based on parameters
-        n_ls_params = self.length_scale.size
-        n_p_params = self.period.size
-
-        grad_length_scale = np.zeros((n_rows, n_cols, n_ls_params))
-        grad_period = np.zeros((n_rows, n_cols, n_p_params))
-
-        for dim in range(n_features):
-            # use correct hyperparameters:
-            # first (only) element in the array if isotropic is true
-            # otherwise use the array corresponding to the iteration's dimension
-            scale_d = (
-                self.length_scale[0]
-                if self.isotropic
-                else self.length_scale[dim]
-            )
-            period_d = self.period[0] if self.isotropic else self.period[dim]
-
-            # determine the indices for the gradient array
-            scale_idx = 0 if self.isotropic else dim
-            period_idx = 0 if self.isotropic else dim
-
-            # calculate distance for this dimension
-            dimension_distance = absolute_dist[:, :, dim]
-
-            # common argument for trig functions for kernel gradient
-            arg_val = np.pi * dimension_distance / period_d
-
-            sin_val = np.sin(arg_val)
-            cos_val = np.cos(arg_val)
-
-            # dK/dl = K * 4 * sin²(...) / l³
-            dK_dl = 4.0 * (sin_val**2) / (scale_d**3)
-            # accumulates for isotropic, assigns per-dimension for anisotropic
-            grad_length_scale[:, :, scale_idx] += K * dK_dl
-
-            # dK/dp = K * 4π * dist * sin(...) * cos(...) / (l² * p²)
-            numerator = 4.0 * np.pi * dimension_distance * sin_val * cos_val
-            denominator = (scale_d**2) * (period_d**2)
-            dK_dp = numerator / denominator
-            # accumulates for isotropic, assigns per-dimension for anisotropic
-            grad_period[:, :, period_idx] += K * dK_dp
-
-        return grad_length_scale, grad_period
+        return gradients
 
     def _compute_with_gradient(
         self, x1: Arrf64, x2: Arrf64
@@ -214,51 +179,61 @@ class PeriodicKernel(Kernel):
             tuple[Arrf64, tuple[Arrf64, ...]]: Kernel matrix and tuple of
                 gradient tensors.
         """
-        # shared distance computation
-        absolute_dist = compute_absolute_distance(x1, x2)
+        n_rows = x1.shape[0]
+        n_cols = x2.shape[0]
+        n_features = x1.shape[1]
 
-        ls = self.length_scale
-        per = self.period
+        exponent = np.zeros((n_rows, n_cols))
 
-        # shared trig terms - computed once for K and gradients
-        # broadcasting handles both isotropic (scalar) and anisotropic (d,)
-        arg_val = (np.pi / per) * absolute_dist
-        sin_val = np.sin(arg_val)
-        cos_val = np.cos(arg_val)
+        # pre-allocate gradient arrays based on isotropy
+        if self.isotropic:
+            grad_ls = np.zeros((n_rows, n_cols, 1))
+            grad_p = np.zeros((n_rows, n_cols, 1))
+        else:
+            grad_ls = np.empty((n_rows, n_cols, n_features))
+            grad_p = np.empty((n_rows, n_cols, n_features))
 
-        # compute K
-        sin_squared = sin_val * sin_val
-        scaled_sine_squared = sin_squared / (ls * ls)
-        exponent = np.sum(scaled_sine_squared, axis=2)
+        for dim in range(n_features):
+            p_d = self.period[0] if self.isotropic else self.period[dim]
+            l_d = (
+                self.length_scale[0]
+                if self.isotropic
+                else self.length_scale[dim]
+            )
+
+            # compute 1D absolute distance (N, M)
+            dist_d = np.abs(x1[:, dim : dim + 1] - x2[:, dim : dim + 1].T)
+
+            arg_val = (np.pi / p_d) * dist_d
+            sin_val = np.sin(arg_val)
+            cos_val = np.cos(arg_val)
+
+            sin_squared = sin_val * sin_val
+            exponent += sin_squared / (l_d * l_d)
+
+            # compute partial derivatives (before multiplying by K)
+            d_ls = 4.0 * sin_squared / (l_d**3)
+            d_p = (4.0 * np.pi * dist_d * sin_val * cos_val) / (
+                (l_d**2) * (p_d**2)
+            )
+
+            if self.isotropic:
+                grad_ls[:, :, 0] += d_ls
+                grad_p[:, :, 0] += d_p
+            else:
+                grad_ls[:, :, dim] = d_ls
+                grad_p[:, :, dim] = d_p
+
+        # compute the final K matrix
         K = np.exp(-2.0 * exponent)
 
-        # compute gradients (reusing sin_squared, sin_val, cos_val)
+        # multiply the partial derivatives by K in-place to complete the chain
+        # rule.
         K_expanded = K[:, :, np.newaxis]
-        ls_cubed = ls * ls * ls
+        grad_ls *= K_expanded
+        grad_p *= K_expanded
 
-        # dK/dl = K * 4 * sin² / l³
-        dK_dl_terms = (4.0 / ls_cubed) * sin_squared
-
-        # dK/dp = K * 4π * dist * sin * cos / (l² * p²)
-        ls_sq_per_sq = (ls * ls) * (per * per)
-        dK_dp_terms = (
-            (4.0 * np.pi / ls_sq_per_sq) * absolute_dist * sin_val * cos_val
-        )
-
-        if self.isotropic:
-            # sum gradients across dimensions for single parameter
-            grad_length_scale = np.sum(
-                K_expanded * dK_dl_terms, axis=2, keepdims=True
-            )
-            grad_period = np.sum(
-                K_expanded * dK_dp_terms, axis=2, keepdims=True
-            )
-        else:
-            # keep dimensions separate for anisotropic
-            grad_length_scale = K_expanded * dK_dl_terms
-            grad_period = K_expanded * dK_dp_terms
-
-        return K, (grad_length_scale, grad_period)
+        return K, (grad_ls, grad_p)
 
     def get_params(self) -> Arrf64:
         """
@@ -269,7 +244,7 @@ class PeriodicKernel(Kernel):
         """
         return np.concatenate([self.length_scale, self.period])
 
-    def set_params(self, params: Arrf64) -> None:
+    def set_params(self, params: Arrf64, validate: bool = True) -> None:
         """
         Sets new hyperparameter values for the kernel.
 
@@ -285,13 +260,16 @@ class PeriodicKernel(Kernel):
             UserWarning: If anisotropic params have different length than
                          current hyperparameters.
         """
-        expected_num_hyperparameters = len(self.length_scale) + len(self.period)
-        params = validate_set_params(
-            params,
-            "New Periodic Kernel Hyperparameters",
-            self.isotropic,
-            expected_num_hyperparameters,
-        )
+        if validate:
+            expected_num_hyperparameters = len(self.length_scale) + len(
+                self.period
+            )
+            params = validate_set_params(
+                params,
+                "New Periodic Kernel Hyperparameters",
+                self.isotropic,
+                expected_num_hyperparameters,
+            )
 
         if self.isotropic:
             self.length_scale = params[:1]

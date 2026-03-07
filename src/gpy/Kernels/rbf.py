@@ -102,12 +102,22 @@ class RBFKernel(Kernel):
         Returns:
             Arrf64: Kernel matrix of shape (n, m).
         """
-        x1_scaled = x1 / self.length_scale
-        x2_scaled = x2 / self.length_scale
+        # hot path for K(x, x): sq_dist will be calculated with a
+        # triangular matrix instead of the full matrix
+        if x1 is x2:
+            x_scaled = x1 / self.length_scale
 
-        square_dist_scaled = compute_square_euclidean_distance(
-            x1_scaled, x2_scaled
-        )
+            square_dist_scaled = compute_square_euclidean_distance(
+                x_scaled, x_scaled
+            )
+
+        else:
+            x1_scaled = x1 / self.length_scale
+            x2_scaled = x2 / self.length_scale
+
+            square_dist_scaled = compute_square_euclidean_distance(
+                x1_scaled, x2_scaled
+            )
 
         return np.exp(-0.5 * square_dist_scaled)
 
@@ -173,28 +183,29 @@ class RBFKernel(Kernel):
             tuple[Arrf64, tuple[Arrf64, ...]]: Kernel matrix and tuple
                 containing the length scale gradient tensor.
         """
-        # difference and squared distance (reused for K and gradient)
-        diff = x1[:, np.newaxis, :] - x2[np.newaxis, :, :]
-        sq_dist = diff**2
-
-        if self.isotropic:
-            # sum over features -> shape (N, M)
-            scaled_dist = np.sum(sq_dist, axis=2) / (self.length_scale[0] ** 2)
-        else:
-            # broadcast division then sum over features -> shape (N, M)
-            scaled_dist = np.sum(sq_dist / (self.length_scale**2), axis=2)
-
+        # 1. Compute K using your fast, already-implemented cdist wrapper
+        x1_scaled = x1 / self.length_scale
+        x2_scaled = x2 / self.length_scale
+        scaled_dist = compute_square_euclidean_distance(x1_scaled, x2_scaled)
         K = np.exp(-0.5 * scaled_dist)
 
-        # compute gradient
+        n, m = K.shape
+
+        # 2. Compute gradients without broadcasting a full (N, M, D) difference tensor
         if self.isotropic:
-            l_val = self.length_scale[0]
-            # sum squared distances, reshape to (N, M, 1) for broadcasting
-            dist_sq_sum = np.sum(sq_dist, axis=2)[:, :, np.newaxis]
-            grad = K[:, :, np.newaxis] * (dist_sq_sum / (l_val**3))
+            # We need the unscaled distance for the gradient
+            sq_dist = compute_square_euclidean_distance(x1, x2)
+            grad = K * (sq_dist / (self.length_scale[0] ** 3))
+            grad = grad[
+                :, :, np.newaxis
+            ]  # Reshape to (N, M, 1) to match expected output
         else:
-            # anisotropic: broadcasting handles (N, M, D) / (D,)
-            grad = K[:, :, np.newaxis] * (sq_dist / (self.length_scale**3))
+            d = x1.shape[1]
+            grad = np.empty((n, m, d), dtype=K.dtype)
+            for i in range(d):
+                # Calculate difference for this dimension only
+                diff_i = x1[:, i : i + 1] - x2[:, i : i + 1].T
+                grad[:, :, i] = K * (diff_i**2 / (self.length_scale[i] ** 3))
 
         return K, (grad,)
 
@@ -207,7 +218,7 @@ class RBFKernel(Kernel):
         """
         return self.length_scale
 
-    def set_params(self, params: Arrf64) -> None:
+    def set_params(self, params: Arrf64, validate: bool = True) -> None:
         """
         Sets new length scale values for the kernel.
 
@@ -222,13 +233,14 @@ class RBFKernel(Kernel):
             UserWarning: If anisotropic params have different length than
                          current hyperparameters.
         """
-        expected_num_hyperparameters = len(self.length_scale)
-        params = validate_set_params(
-            params,
-            "New RBF Kernel Hyperparameters",
-            self.isotropic,
-            expected_num_hyperparameters,
-        )
+        if validate:
+            expected_num_hyperparameters = len(self.length_scale)
+            params = validate_set_params(
+                params,
+                "New RBF Kernel Hyperparameters",
+                self.isotropic,
+                expected_num_hyperparameters,
+            )
 
         self.length_scale = params
 

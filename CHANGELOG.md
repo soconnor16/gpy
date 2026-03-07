@@ -2,7 +2,17 @@
 
 Notable changes to this project will be documented in this file.
 
-## [2.1.0] - Unreleased
+## [2.1.1] - 2026-03-07
+
+### Added
+
+- **Performance** Minor changes to computation utilities and optimization algorithms for increased performance
+
+### Fixed
+
+- v2.1.0 changelog now correctly reflects the date it was released
+
+## [2.1.0] - 2026-03-05
 
 ### Added
 

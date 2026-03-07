@@ -107,7 +107,7 @@ class GaussianProcess:
         return
 
     def optimize_hyperparameters(
-        self, objective: str, num_restarts: int = 5
+        self, objective: str, num_restarts: int = 10
     ) -> None:
         """
         Optimizes the kernel hyperparameters using the specified objective
@@ -134,7 +134,9 @@ class GaussianProcess:
             K, self._noise, max_attempts=10
         )
 
-        self.alpha = linalg.cho_solve((self._lower_chol, True), self.y_train)
+        self.alpha = linalg.cho_solve(
+            (self._lower_chol, True), self.y_train, check_finite=False
+        )
 
         return
 
@@ -234,7 +236,7 @@ class GaussianProcess:
         # compute variance / covariance
         # v = L^-1 * k_test_train.T
         variance = linalg.solve_triangular(
-            self._lower_chol, k_test_train.T, lower=True
+            self._lower_chol, k_test_train.T, lower=True, check_finite=False
         )
 
         if return_cov:
@@ -249,7 +251,7 @@ class GaussianProcess:
 
         k_diag = self.kernel._compute_diag(x_norm)
 
-        y_var_norm = k_diag - np.sum(variance**2, axis=0)
+        y_var_norm = k_diag - np.einsum("ij,ij->j", variance, variance)
 
         y_var_norm = np.maximum(y_var_norm, 0.0)
         y_std = np.sqrt(y_var_norm) * self._y_std

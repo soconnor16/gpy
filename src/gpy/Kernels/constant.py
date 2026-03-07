@@ -108,7 +108,7 @@ class ConstantKernel(Kernel):
         """
         return self.constant
 
-    def set_params(self, params: Arrf64) -> None:
+    def set_params(self, params: Arrf64, validate: bool = True) -> None:
         """
         Sets new hyperparameter values for the kernel.
 
@@ -118,9 +118,12 @@ class ConstantKernel(Kernel):
         Raises:
             ValidationError: If params contains invalid values.
         """
-        self.constant = validate_set_params(
-            params, "New Constant Kernel Hyperparameter", True, 1
-        )
+        if validate:
+            self.constant = validate_set_params(
+                params, "New Constant Kernel Hyperparameter", True, 1
+            )
+        else:
+            self.constant = params.flatten()
 
     def _compute_with_gradient(
         self, x1: Arrf64, x2: Arrf64

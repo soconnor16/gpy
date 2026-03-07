@@ -169,7 +169,7 @@ class Kernel(ABC):
         """
 
     @abstractmethod
-    def set_params(self, params: Arrf64) -> None:
+    def set_params(self, params: Arrf64, validate: bool) -> None:
         """
         Method to set new hyperparameter values for the kernel. hyperparameter
         values should be passed as a flat array in the order defined by the

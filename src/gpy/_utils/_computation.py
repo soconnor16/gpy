@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy import linalg
-from scipy.spatial import distance
+from scipy.spatial.distance import cdist, pdist, squareform
 
 from gpy._utils._constants import EPSILON
 from gpy._utils._types import Arrf64, f64
@@ -23,28 +23,14 @@ def compute_square_euclidean_distance(x1: Arrf64, x2: Arrf64) -> Arrf64:
     Returns:
         Arrf64: The square euclidean distance matrix between input arrays.
     """
-    square_dist = distance.cdist(x1, x2, metric="sqeuclidean")
+    # check if x1 and x2 are the exact same array object in memory
+    if x1 is x2:
+        # if they are, calculate only the upper triangle
+        sq_dist = pdist(x1, metric="sqeuclidean")
+        return squareform(sq_dist).astype(np.float64)
 
+    square_dist = cdist(x1, x2, metric="sqeuclidean")
     return square_dist.astype(np.float64)
-
-
-def compute_absolute_distance(x1: Arrf64, x2: Arrf64) -> Arrf64:
-    """
-    Helper function which computes the absolute distance |x - x_i| between
-    two input arrays.
-
-    Args:
-        - x1 (Arrf64): Input array 1
-        - x2 (Arrf64): Input array 2
-
-    Returns:
-        Arrf64: The absolute distance tensor of shape (n, m, d) where
-            result[i, j, k] = |x1[i, k] - x2[j, k]|
-    """
-    x1_expanded = x1[:, np.newaxis, :]
-    x2_expanded = x2[np.newaxis, :, :]
-
-    return np.abs(x1_expanded - x2_expanded)
 
 
 def compute_lower_cholesky_decomposition(
@@ -72,15 +58,22 @@ def compute_lower_cholesky_decomposition(
         ValueError: If decomposition fails after all strategies are exhausted.
     """
     n = K.shape[0]
-    K_reg = np.empty_like(K)
+
+    # copy the matrix exactly once before the loop
+    K_reg = K.copy()
+    current_noise = 0.0
 
     # phase 1: retry with exponentially growing noise
     for attempt in range(max_attempts):
-        np.copyto(K_reg, K)
-        K_reg.flat[:: n + 1] += noise
+        # calculate how much additional noise is needed for this attempt
+        noise_to_add = noise - current_noise
+
+        # add the noise in-place to the diagonal
+        K_reg.flat[:: n + 1] += noise_to_add
+        current_noise = noise
 
         try:
-            return linalg.cholesky(K_reg, lower=True), noise
+            return linalg.cholesky(K_reg, lower=True, check_finite=False), noise
         except linalg.LinAlgError:
             pass
 
@@ -90,10 +83,9 @@ def compute_lower_cholesky_decomposition(
         noise *= 10
 
     # phase 2: eigenvalue-based correction
-    np.copyto(K_reg, K)
-    K_reg.flat[:: n + 1] += noise
-
-    eigenvalues = linalg.eigvalsh(K_reg)
+    # note: K_reg already has `current_noise` added to its diagonal.
+    # we just compute the eigenvalues of the current regularized matrix.
+    eigenvalues = linalg.eigvalsh(K_reg, check_finite=False)
     min_eig = float(np.min(eigenvalues))
 
     if min_eig >= 0.0:
@@ -103,12 +95,13 @@ def compute_lower_cholesky_decomposition(
         )
         raise ValueError(err_msg)
 
+    # add the final jitter to the diagonal in-place
     jitter = abs(min_eig) + EPSILON
     K_reg.flat[:: n + 1] += jitter
     noise += jitter
 
     try:
-        return linalg.cholesky(K_reg, lower=True), noise
+        return linalg.cholesky(K_reg, lower=True, check_finite=False), noise
     except linalg.LinAlgError as exc:
         err_msg = (
             "Error: Numerical instability during kernel matrix "

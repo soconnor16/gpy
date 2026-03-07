@@ -119,7 +119,7 @@ def optimize_hyperparameters(
 
     # function wrapper for scipy optimizer
     def func_wrapper(theta):
-        learner.gp.kernel.set_params(theta[:-1])
+        learner.gp.kernel.set_params(theta[:-1], validate=False)
         learner.gp._noise = theta[-1]
         learner.gp._fit_without_optimization()
         return loss_fn(learner)
@@ -149,7 +149,7 @@ def optimize_hyperparameters(
 
     # if all screening runs failed, fall back to initial parameters
     if not screening_results:
-        learner.gp.kernel.set_params(initial_theta[:-1])
+        learner.gp.kernel.set_params(initial_theta[:-1], validate=False)
         learner.gp._noise = initial_theta[-1]
         learner.gp._fit_without_optimization()
         return
@@ -182,7 +182,7 @@ def optimize_hyperparameters(
             continue
 
     # set final best hyperparameters
-    learner.gp.kernel.set_params(best_theta[:-1])
+    learner.gp.kernel.set_params(best_theta[:-1], validate=False)
     learner.gp._noise = best_theta[-1]
 
     learner.gp._fit_without_optimization()

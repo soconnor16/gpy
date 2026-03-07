@@ -104,7 +104,7 @@ class CompositeKernel(Kernel):
 
         return np.concatenate(params_list)
 
-    def set_params(self, params: Arrf64) -> None:
+    def set_params(self, params: Arrf64, validate: bool = True) -> None:
         """
         Distributes and sets hyperparameters to each child kernel.
 
@@ -117,7 +117,7 @@ class CompositeKernel(Kernel):
         for k in self.kernels:
             num_params = len(k.get_params())
             kernel_params = params[idx : idx + num_params]
-            k.set_params(kernel_params)
+            k.set_params(kernel_params, validate)
             idx += num_params
 
         return
@@ -362,23 +362,15 @@ class ProductKernel(CompositeKernel):
             tuple[Arrf64, ...]: Gradients scaled by product of other kernels.
         """
         # product rule: d(ABC)/dθ = (dA * BC) + (dB * AC) + ...
-        k_matrices = [k._compute(x1, x2) for k in self.kernels]
-
+        results = [k._compute_with_gradient(x1, x2) for k in self.kernels]
+        k_matrices, grad_list = zip(*results)
         all_grads = []
-
-        for i, k in enumerate(self.kernels):
-            # compute product of all other kernels
+        for i, k_grads in enumerate(grad_list):
             k_other = np.ones_like(k_matrices[0])
-
             for j, k_matrix in enumerate(k_matrices):
                 if i != j:
                     k_other *= k_matrix
-
-            k_grads = k._gradient(x1, x2)
-
-            # apply product rule: grad * (everything else)
             scaled_grads = [g * k_other[..., np.newaxis] for g in k_grads]
-
             all_grads.extend(scaled_grads)
 
         return tuple(all_grads)

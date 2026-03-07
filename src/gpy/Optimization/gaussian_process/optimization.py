@@ -21,7 +21,7 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.stats import qmc
 
-from gpy._utils._constants import GLOBAL_MAXITER, LOCAL_MAXITER, N_REFINE
+from gpy._utils._constants import LOCAL_MAXITER, N_REFINE
 from gpy.Optimization.gaussian_process.loss_functions import (
     negative_log_marginal_likelihood,
 )
@@ -119,12 +119,12 @@ def optimize_hyperparameters(
 
     # function wrappers for scipy optimizer
     def func_wrapper_grad(theta):
-        gp.kernel.set_params(theta[:-1])
+        gp.kernel.set_params(theta[:-1], validate=False)
         gp._noise = theta[-1]
         return loss_fn(gp, return_gradient=True)
 
     def func_wrapper_no_grad(theta):
-        gp.kernel.set_params(theta[:-1])
+        gp.kernel.set_params(theta[:-1], validate=False)
         gp._noise = theta[-1]
         return loss_fn(gp)
 
@@ -141,22 +141,15 @@ def optimize_hyperparameters(
 
     for start_theta in starting_points:
         try:
-            result = minimize(
-                func_wrapper,
-                start_theta,
-                method="L-BFGS-B",
-                jac=use_grad,
-                bounds=bounds,
-                options={"maxiter": GLOBAL_MAXITER},
-            )
-            screening_results.append((result.fun, result.x))
-
+            # evaluate the loss function for candidates
+            loss = func_wrapper_no_grad(start_theta)
+            screening_results.append((loss, start_theta))
         except np.linalg.LinAlgError:
             continue
 
     # if all screening runs failed, fall back to initial parameters
     if not screening_results:
-        gp.kernel.set_params(initial_theta[:-1])
+        gp.kernel.set_params(initial_theta[:-1], validate=False)
         gp._noise = initial_theta[-1]
         gp._fit_without_optimization()
         return
@@ -179,7 +172,11 @@ def optimize_hyperparameters(
                 method="L-BFGS-B",
                 jac=use_grad,
                 bounds=bounds,
-                options={"maxiter": LOCAL_MAXITER},
+                options={
+                    "maxiter": LOCAL_MAXITER,
+                    "ftol": 1e-5,
+                    "gtol": 1e-4,
+                },
             )
 
             if result.fun < best_loss:

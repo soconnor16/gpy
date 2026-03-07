@@ -273,7 +273,7 @@ class MaternKernel(Kernel):
         """
         return self.length_scale
 
-    def set_params(self, params: Arrf64) -> None:
+    def set_params(self, params: Arrf64, validate: bool = True) -> None:
         """
         Sets new length scale values for the kernel.
 
@@ -288,13 +288,14 @@ class MaternKernel(Kernel):
             UserWarning: If anisotropic params have different length than
                          current hyperparameters.
         """
-        expected_num_hyperparameters = len(self.length_scale)
-        params = validate_set_params(
-            params,
-            "New Matérn Kernel Hyperparameters",
-            self.isotropic,
-            expected_num_hyperparameters,
-        )
+        if validate:
+            expected_num_hyperparameters = len(self.length_scale)
+            params = validate_set_params(
+                params,
+                "New Matérn Kernel Hyperparameters",
+                self.isotropic,
+                expected_num_hyperparameters,
+            )
 
         self.length_scale = params
 

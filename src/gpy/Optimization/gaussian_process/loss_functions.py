@@ -68,7 +68,7 @@ def negative_log_marginal_likelihood(
         return (val, np.zeros(n_params)) if return_gradient else val
 
     # compute alpha
-    alpha_vec = linalg.cho_solve((L, True), y)
+    alpha_vec = linalg.cho_solve((L, True), y, check_finite=False)
 
     # log marginal likelihood terms
     data_fit = -0.5 * (y.ravel() @ alpha_vec.ravel())
@@ -83,7 +83,9 @@ def negative_log_marginal_likelihood(
 
     # gradient computation: K_inv needed for trace term (α @ α.T - K⁻¹)
     n = K.shape[0]
-    K_inv = linalg.cho_solve((L, True), np.eye(n, dtype=K.dtype))
+    K_inv = linalg.cho_solve(
+        (L, True), np.eye(n, dtype=K.dtype), check_finite=False
+    )
     inner_term = np.outer(alpha_vec, alpha_vec) - K_inv
 
     kernel_grads = []
