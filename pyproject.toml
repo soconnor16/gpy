@@ -1,6 +1,6 @@
 [project]
 name = "gpy"
-version = "2.1.1"
+version = "2.1.2"
 description = "Lightweight Gaussian Process regression library"
 license = { file = "LICENSE" }
 authors = [{ name = "Stephen O'Connor", email = "soconnor10111@gmail.com" }]

@@ -2,6 +2,11 @@
 
 Notable changes to this project will be documented in this file.
 
+## [2.1.2] - 2026-03-07
+
+### Added
+- **Benchmarking** [Benchmark suite](benchmarks/) for testing compute-heavy sections of this package
+
 ## [2.1.1] - 2026-03-07
 
 ### Added
